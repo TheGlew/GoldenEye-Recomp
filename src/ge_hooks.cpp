@@ -571,6 +571,22 @@ bool ge_debug_gate(PPCRegister& r30) {
   return REXCVAR_GET(ge_debug_menu) && ((r30.u32 & 0x100u) == 0u);
 }
 
+// 32:9 ultrawide: sub_820C32B8 is the game's aspect-ratio getter. It reads the
+// watch aspect option (sub_820C31D0: 0 = 4:3, 1 = 21:9, 2 = 16:9) and returns
+// the matching constant in f1 (0x8200372C / 0x82003D40 / 0x82003D44). With
+// ge_aspect > 0.1 the hook (entry, return_on_true) returns the override
+// instead, so projection/culling/HUD all see the custom aspect coherently.
+// 5120x1440 = 3.5556. 0 keeps the in-game setting untouched.
+REXCVAR_DEFINE_DOUBLE(ge_aspect, 0.0, "Video",
+                      "Gameplay aspect ratio override (0 = in-game watch setting; 3.5556 = 32:9)")
+    .range(0.0, 6.0);
+bool ge_aspect_override(PPCRegister& f1) {
+  const double aspect = REXCVAR_GET(ge_aspect);
+  if (aspect < 0.1) return false;
+  f1.f64 = aspect;
+  return true;
+}
+
 // F2  sub_820F7968: r26 0..8 loop. sub_820F7968 = prologue only (codegen sets
 // constants + r26=0). ge_f2_driver fires after the last prologue instruction
 // (0x820F79EC, after, return) and drives the loop:

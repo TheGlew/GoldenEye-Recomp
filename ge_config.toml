@@ -122,6 +122,17 @@ address = 0x823B25E4
 name = "ge_inject_keyboard"
 registers = ["r11"]
 after_instruction = true
+# 32:9 ultrawide: override the aspect-ratio getter sub_820C32B8 (option enum
+# via sub_820C31D0: 0 = 4:3 @0x8200372C, 1 = 21:9 @0x82003D40, 2 = 16:9
+# @0x82003D44). When the ge_aspect cvar is > 0.1 the hook returns it in f1 and
+# skips the original selector (return_on_true), so every consumer of the
+# getter (projection, culling, HUD) sees the custom aspect. See ge_hooks.cpp.
+[[midasm_hook]]
+address = 0x820C32B8
+name = "ge_aspect_override"
+registers = ["f1"]
+after_instruction = false
+return_on_true = true
 # Hidden debug menu enable (TCRF: byte 0x82189F2B 0x0F->0x00). Replace the dead
 # `beq` at 0x82189F2C with a live gate so LB toggles the debug menu when the
 # ge_debug_menu cvar is on; off = original retail behaviour. See ge_hooks.cpp.
