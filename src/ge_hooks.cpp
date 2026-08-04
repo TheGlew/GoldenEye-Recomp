@@ -571,20 +571,52 @@ bool ge_debug_gate(PPCRegister& r30) {
   return REXCVAR_GET(ge_debug_menu) && ((r30.u32 & 0x100u) == 0u);
 }
 
-// 32:9 ultrawide: sub_820C32B8 is the game's aspect-ratio getter. It reads the
+// Ultrawide: sub_820C32B8 is the game's aspect-ratio getter. It reads the
 // watch aspect option (sub_820C31D0: 0 = 4:3, 1 = 21:9, 2 = 16:9) and returns
-// the matching constant in f1 (0x8200372C / 0x82003D40 / 0x82003D44). With
-// ge_aspect > 0.1 the hook (entry, return_on_true) returns the override
-// instead, so projection/culling/HUD all see the custom aspect coherently.
-// 5120x1440 = 3.5556. 0 keeps the in-game setting untouched.
+// the matching constant in f1 (0x8200372C / 0x82003D40 / 0x82003D44). The
+// game renders anamorphically into its fixed 16:9 output and presentation
+// stretches that to the window, so geometry is correct exactly when the
+// target aspect equals the WINDOW aspect. (The guest-side dimension getters
+// at [0x8272D54C] are virtual 4:3 canvases -- 320x240 / 440x330 -- and are
+// useless for this; measured 2026-08-04.)
+//
+// ge_aspect_auto (default on) therefore returns the live window client-rect
+// aspect via the same HWND the mouse-look machinery tracks, so any window or
+// fullscreen size renders edge-to-edge with correct geometry.
+// ge_aspect > 0.1 forces a fixed value instead (takes precedence);
+// both off = original watch-option behaviour.
+HWND ge_aspect_window();  // bridge to the mouse-look machinery's HWND (defined below)
 REXCVAR_DEFINE_DOUBLE(ge_aspect, 0.0, "Video",
-                      "Gameplay aspect ratio override (0 = in-game watch setting; 3.5556 = 32:9)")
+                      "Fixed gameplay aspect override (0 = off; 3.5556 = 32:9). Overrides ge_aspect_auto.")
     .range(0.0, 6.0);
+REXCVAR_DEFINE_BOOL(ge_aspect_auto, true, "Video",
+                    "Match the gameplay aspect to the window automatically (fills any window, no letterbox)");
 bool ge_aspect_override(PPCRegister& f1) {
-  const double aspect = REXCVAR_GET(ge_aspect);
-  if (aspect < 0.1) return false;
-  f1.f64 = aspect;
-  return true;
+  const double fixed = REXCVAR_GET(ge_aspect);
+  if (fixed > 0.1) {
+    f1.f64 = fixed;
+    return true;
+  }
+  if (REXCVAR_GET(ge_aspect_auto)) {
+    HWND hwnd = ge_aspect_window();
+    RECT rc;
+    if (hwnd && GetClientRect(hwnd, &rc)) {
+      const LONG w = rc.right - rc.left;
+      const LONG h = rc.bottom - rc.top;
+      if (w > 0 && h > 0) {
+        static uint64_t logged = 0;
+        const uint64_t dims = ((uint64_t)(uint32_t)w << 32) | (uint32_t)h;
+        if (dims != logged) {
+          logged = dims;
+          REXKRNL_INFO("GEASPECT auto: window {}x{} -> aspect {:.4f}", (int)w, (int)h,
+                       (double)w / (double)h);
+        }
+        f1.f64 = (double)w / (double)h;
+        return true;
+      }
+    }
+  }
+  return false;
 }
 
 // F2  sub_820F7968: r26 0..8 loop. sub_820F7968 = prologue only (codegen sets
@@ -870,6 +902,10 @@ void ge_start_mouse_once() {
 int ge_take_mouse_dx() { return g_mouse_dx.exchange(0, std::memory_order_relaxed); }
 int ge_take_mouse_dy() { return g_mouse_dy.exchange(0, std::memory_order_relaxed); }
 }  // namespace
+
+// External-linkage bridge so the aspect hook (defined above the anonymous
+// namespace) can reach the tracked game HWND.
+HWND ge_aspect_window() { return ge_game_window(); }
 
 namespace ge {
 // Start the raw-mouse + cursor-capture thread once, at app startup, so capture
