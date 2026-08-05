@@ -1246,6 +1246,31 @@ void ge_inject_keyboard(PPCRegister& /*r11*/) {
     REXKRNL_INFO("GECE community data bug-fixes applied");
   }
 
+  // Pin the watch Screen Ratio to 16:9 while the aspect override is active.
+  // The ratio lives as profile-settings FLAGS (bit 12 = 16:9, bit 13 = 21:9,
+  // neither = Normal) in a bitset at profile+664 (sub_82183F28's layout:
+  // word = profile + (166 + flag/32)*4). The leaked XBLA build does not
+  // persist these flags across sessions, and bar-drawing queries them
+  // DIRECTLY (bypassing the sub_820C31D0 wrapper), so pinning the wrapper is
+  // insufficient and the option silently reverting to Normal resurrects
+  // gameplay letterbox bars (the 2026-08-04 saga). Profiles are found via
+  // sub_821838B0's global array at 0x83088228 (valid: ptr, byte+1358 != 0).
+  // Idempotent one-word write per profile per frame.
+  if (REXCVAR_GET(ge_aspect) > 0.1 || REXCVAR_GET(ge_aspect_auto)) {
+    for (uint32_t i = 0; i < 4; ++i) {
+      const uint32_t prof = LD32(base, 0x83088228u + i * 4u);
+      if (!prof) continue;
+      if (base[prof + 1358u] == 0) continue;
+      const uint32_t flagaddr = prof + 166u * 4u;  // flags 0-31 word
+      const uint32_t word = LD32(base, flagaddr);
+      const uint32_t neww = (word | (1u << 12)) & ~(1u << 13);
+      if (neww != word) {
+        ST32(base, flagaddr, neww);
+        REXKRNL_INFO("GEASPECT ratio flags pinned to 16:9 (profile {} @ {:#x})", i, prof);
+      }
+    }
+  }
+
   // Rebind capture: the menu is listening for a key to bind. Swallow ALL slot-0
   // controller input (buttons, triggers, both sticks) so the key/button being
   // bound doesn't also drive the game, and skip keyboard injection + mouse-look.
