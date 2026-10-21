@@ -592,9 +592,19 @@ REXCVAR_DEFINE_DOUBLE(ge_aspect, 0.0, "Video",
 REXCVAR_DEFINE_BOOL(ge_aspect_auto, true, "Video",
                     "Match the gameplay aspect to the window automatically (fills any window, no letterbox)");
 bool ge_aspect_override(PPCRegister& f1) {
+  // The 3D viewport-placement code (sub_82096180, called from 0x820961B4)
+  // computes screen-space offsets in the game's virtual 4:3 canvas as
+  // (canvasW - aspect*canvasH)/2. Feeding it a wide aspect mis-places a
+  // narrowed viewport (asymmetric black bars in gameplay; menus unaffected --
+  // 2026-08-04 evening bisect). That one caller must see the canvas-native
+  // ratio so its offsets zero out (full-frame viewport); projection and every
+  // other consumer get the override. Discriminated by the call return address.
+  PPCContext* ctx0; uint8_t* base0; getcb(ctx0, base0); (void)base0;
+  const bool viewport_caller = (ctx0->lr == 0x820961B4u);
+
   const double fixed = REXCVAR_GET(ge_aspect);
   if (fixed > 0.1) {
-    f1.f64 = fixed;
+    f1.f64 = viewport_caller ? (4.0 / 3.0) : fixed;
     return true;
   }
   if (REXCVAR_GET(ge_aspect_auto)) {
@@ -611,7 +621,7 @@ bool ge_aspect_override(PPCRegister& f1) {
           REXKRNL_INFO("GEASPECT auto: window {}x{} -> aspect {:.4f}", (int)w, (int)h,
                        (double)w / (double)h);
         }
-        f1.f64 = (double)w / (double)h;
+        f1.f64 = viewport_caller ? (4.0 / 3.0) : ((double)w / (double)h);
         return true;
       }
     }

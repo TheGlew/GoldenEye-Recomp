@@ -133,6 +133,9 @@ name = "ge_aspect_override"
 registers = ["f1"]
 after_instruction = false
 return_on_true = true
+# (An option-enum pin at sub_820C31D0 was tried and falsified 2026-08-04:
+# pinning 16:9 or Normal both produced gameplay bars. The gameplay viewport
+# placement is driven by the FLOAT getter via sub_82096180, handled below.)
 # Hidden debug menu enable (TCRF: byte 0x82189F2B 0x0F->0x00). Replace the dead
 # `beq` at 0x82189F2C with a live gate so LB toggles the debug menu when the
 # ge_debug_menu cvar is on; off = original retail behaviour. See ge_hooks.cpp.
